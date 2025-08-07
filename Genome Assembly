@@ -1,0 +1,29 @@
+#Starting from NECAT
+$module load bio/NECAT/0.0.1_update20200803-GCC-12.2.0
+
+The following have been reloaded with a version change:
+  1) devel/ncurses/6.3-GCCcore-11.3.0 => devel/ncurses/6.3-GCCcore-12.2.0
+  2) lang/Perl/5.34.1-GCCcore-11.3.0 => lang/Perl/5.36.0-GCCcore-12.2.0
+  3) lib/libreadline/8.1.2-GCCcore-11.3.0 => lib/libreadline/8.2-GCCcore-12.2.0
+  4) tools/DB/18.1.40-GCCcore-11.3.0 => tools/DB/18.1.40-GCCcore-12.2.0
+  5) tools/expat/2.4.8-GCCcore-11.3.0 => tools/expat/2.4.9-GCCcore-12.2.0
+
+#Correct the necat file (use & at the end to run it on the background)
+$ necat.pl correct Lbraz.necat.config.minion.txt &> Lbraz.necat.minion.correct.log &
+[1] 1741367
+
+#Assemble the contigs
+$ necat.pl assemble Lbraz.necat.config.minion.txt &> Lbraz.necat.minion.assemble.log &
+[1] 1765195
+
+#Bridge the contigs for final assembly
+$ necat.pl bridge Lbraz.necat.minion.txt &> Lbraz.necat.minion.bridge.log &
+[1] 1792954
+
+#Make a directoryy inside the Lbraz-M2903-assembly-minion-reads named 'Contigs to copy the important contigs from other directories to this one
+$ mkdir Contigs
+$ cp ../4-fsa/polished_contigs.fasta 4-polished_contigs
+$ cp ../6-bridge_contigs/polished_contigs.fasta 6-polished_contigs
+$ cp ../6-bridge_contigs/bridged_contigs.fasta 6-bridge_contigs
+$ ls
+4-polished_contigs  6-bridge_contigs  6-polished_contigs
