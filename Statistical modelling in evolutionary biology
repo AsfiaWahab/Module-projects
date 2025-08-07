@@ -1,0 +1,623 @@
+
+#Load package
+library (tidyverse)
+#Add extra space to right margin of plot within frame
+par(mar=c(5, 4, 4, 6) + 0.1)
+#Load in the temperature data
+temperature <- read.csv("temperatureTimeSeries.csv", header = FALSE)
+#Plot temperature Data
+plot(temperature)
+#Smooth the temperature data to prevent auto correlation
+finaltemp <- smooth(smooth(temperature$V2))
+#Plot the final temperature data
+plot(finaltemp)
+#Plot the final data over time
+plot(temperature$V1,finaltemp, type = "l", xlab='Time before present (myr)', xlim=c(220,0), col = "#ffa600", ylab = "Final Temperature")
+#Load in the sea level data
+seaLevel <- read.csv ("seaLevelTimeSeries.csv", header = TRUE)
+#Add another graph on the same plot
+par(new = TRUE) 
+#Plot the sea level data
+plot(seaLevel, xlim=c(250,0), type = 'l', col = "#007bff", xlab = "", ylab = "", axes = FALSE) #Keep the axes false to prevent overwriting
+#Label y-axis on the other side of the graph
+mtext("Sea Level",side=4,line=4) 
+axis(4, las=1) #axis 4 labels on the other side and las=1 makes horizontal labels
+#Add the legend and specify colours
+legend("topright",legend=c("Temperature","Sea Level"), text.col=c("#ffa600","#007bff"),col=c("#ffa600","#007bff"), xjust = 5, lwd=2) #lwd= changes the widths of the coloured lines in legend.
+#Save the data for next workshop
+save.image("Crocs_Workshop1.RData")
+
+#################################################################Phylogenetic Tree#################################################################################################################
+#############Workshop-2
+#Load packages
+library (phytools)
+library(strap)
+library(ggplot2)
+#Load the data from previous workshop
+load("Crocs_Workshop1.RData")
+#Load in the tree
+tree <- read.tree("fossilCrocPhylogeny.tre")
+#Plot the tree
+plot (tree, cex = 0.45)
+tree #Shows the values of tree
+tree$edge #Shows branches of the tree
+#Load in the habitat data
+habitatdata <- read.csv("HabitatData.csv", header=T, stringsAsFactors = FALSE)
+keep.tip() #Keep specific data
+drop.tip() #Eliminate data
+#Check the first few data from the habitat data
+head(habitatdata)
+
+#####Terrestrial Phylogram
+#Extract the terrestrial data from the habitat data using subset
+TerrestrialTaxa <- subset(habitatdata, habitatdata$Habitat=='Terrestrial')$Taxon
+# Check the first few data from the Terrestrial taxa
+head(TerrestrialTaxa)
+#Create a tree using the terrestrial taxa data
+treeT <- keep.tip(tree, TerrestrialTaxa)
+#Observe the terrestrial subtree
+treeT #Phylogenetic tree with 207 tips and 206 internal nodes.
+#Plot the terrestrial tree
+plot(treeT, cex = 0.2)
+
+###Geoscale Terrestrial phylotree
+#To find out the root nodes by understanding the ages of nodes which is nodeHeights
+lengths <- nodeHeights(treeT)
+#To find out maximum root age
+root.time <- max(lengths)
+#Set the variable root.time in the tree
+treeT$root.time <- root.time
+#Specify the number of taxa (OTUs) from the terrestrial tree
+all_otus <- treeT$tip.label
+#Create an empty matrix with 2 coloumns
+all_otudates <- matrix(0, nrow = length(all_otus), ncol=2)
+#Converting the matrix into a data frame
+all_otudates <- data.frame(all_otudates)
+#Specifying the row names
+row.names(all_otudates) <- all_otus
+#Change the column names to FAD and LAD
+colnames(all_otudates) <- c('FAD','LAD') #FAD = First Appearance Datum and LAD = Last Appearance Datum
+#Plot the terrestrial phylogenetic tree against geological timescale
+geoscalePhylo(treeT,ages=all_otudates, cex.tip=0.35, lwd=1, quat.rm=T, units=c("Period", "Epoch"), boxes="Epoch", cex.ts = 0.7, cex.age = 0.7, font=4)
+
+#####Marine Phylogram
+#Extract the marine data from the habitat data using subset
+Marinetaxa <- subset(habitatdata, habitatdata$Habitat=='Marine')$Taxon
+# Check the first few data from the Marine taxa
+head(Marinetaxa)
+#Create a tree using the marine taxa data
+treeM <- keep.tip(tree, Marinetaxa)
+#Observe the ma subtree
+treeM #Phylogenetic tree with 108 tips and 107 internal nodes.
+#Plot the marine tree
+plot(treeM, cex = 0.47)
+
+###Geoscale Marine phylotree (similar to the terrestrial plylotree)
+#To find out the root nodes by understanding the ages of nodes which is nodeHeights as ‘Height’
+Height <- nodeHeights(treeM)
+#To find out maximum root age
+root.time <- max(Height)
+#Set the variable root.time in the tree
+treeM$root.time <- time
+#Specify the number of taxa (OTUs) from the marine tree
+list_otus <- treeM$tip.label
+#Create an empty matrix with 2 coloumns
+list_otudates <- matrix(0, nrow = length(list_otus), ncol=2)
+#Converting the matrix into a data frame
+list_otudates <- data.frame(list_otudates)
+#Specifying the row names and changing the column names to FAD and LAD
+row.names(list_otudates) <- list_otus
+colnames(list_otudates) <- c('FAD','LAD')
+#Plot the marine phylogenetic tree against geological timescale
+geoscalePhylo(treeM,ages=list_otudates, cex.tip=0.35, lwd=1, quat.rm=T, units=c("Period", "Epoch"), boxes="Epoch", cex.ts = 0.7, cex.age = 0.7, font=4)
+#Save the data for next workshop
+save.image(workshop2.RData)
+Diversification Data (Speciation and Extinction)
+Workshop-3
+#Load the previous data
+load (“workshop2.Rdata”)
+#Load packages 
+library (BAMMtools)
+library(phytools)
+#Terrestrial Speciation and Extinction Rates
+edata <- getEventData(tree, eventdata =’fossilCrocDiversificationData.txt’, burnin=0.1) #eventdata= big data file extracted from all the data files
+streeTerrestrial <- subtreeBAMM(edata, tips=TerrestrialTaxa) #BAMM= SPECIFYING TERRISTEIAL OR MARINE
+streeTerrestrial
+rtt_T <- getRateThroughTimeMatrix(streeTerrestrial)     #AVERAGE DIVERSIFICATION RATE
+summary(rtt_T)
+rtt_T$times      #To understand how many data for each specific times
+rtt_T$lambda   #Lambda = speciation rate which is the rate of species formation
+rtt_T$mu           #$= extracting a group of data, mu= rate of extinction
+rtt_T$type         #type = diversification
+plotRateThroughTime(streeTerrestrial, ratetype=’speciation’, avgCol=”green3”, ylim=c(0,0.5), cex.axis=2, intervalCol=’green3’, intervals=c(0.05, 0.95), opacity=0.1)
+#plotRateThroughTime = for the package bamm, ratetype= could be either ‘speciation’ or ‘extinction’
+plotRateThroughTime(streeTerrestrial, ratetype=’extinction’, avgCol=”red”, ylim=c(0,0.5), cex.axis=2, intervalCol=’brown’, intervals=c(0.05, 0.95), opacity=0.1)
+#extinction for some species would drive the emergence of new species
+#could be radiation around 200 and during the 
+legend (‘topleft’, legend = c(‘Marine speciation’, ‘Terrestial speciation’), fill = c(‘darkblue’, ‘green3’), lwd = 3)
+
+###Marine Speciation and Extinction rates
+edata <- getEventData(tree, eventdata =’fossilCrocDiversificationData.txt’, burnin=0.1) #eventdata= big data file extracted from all the data files
+streeMarine <- subtreeBAMM(edata, tips=Marinetaxa) #BAMM= SPECIFYING TERRISTEIAL OR MARINE
+streeMarine
+rtt_M <- getRateThroughTimeMatrix(streeMarine) #AVERAGE DIVERSIFICATION RATE
+summary(rtt_M)
+rtt_M$times #HOW MANY DATA FOR EACH SPECIFIC TIMES
+rtt_M$lambda #LAMBA = speciation rate= rate of species formation, mu= rate of extinction, type = diversification
+rtt_M$mu #$= extracting a group of data
+rtt_M$type
+plotRateThroughTime(streeMarine, ratetype=’speciation’, avgCol=”darkblue”, ylim=c(0,0.5), cex.axis=2, intervalCol=’darkblue’, intervals=c(0.05, 0.95), opacity=0.1, add = TRUE)
+plotRateThroughTime(rtt_M, ratetype=’extinction’, avgCol=”orange”, ylim=c(0,0.5), cex.axis=2, intervalCol= ‘orange’, intervals=c(0.05, 0.95), opacity=0.1, add = TRUE)
+# ‘add = TRUE’ is used to add all the speciation rates together and the extinction rates together. This can be achieved by running the terrestrial speciation rates first followed by the marine speciation rates. Similarly do the same thing for the extinction rates.
+Legend (‘topleft’, legend = c(‘Marine extinction’, ‘Terrestial extinction’), fill = c(‘orange’, ‘red’), lwd = 1)
+#marine dinosaurs evolve a bit later
+#To specify the marine mu value as 0 because my graph was not showing
+any(is.na(rtt_M$mu))
+rtt_M$mu[is.na(rtt_M$mu)] <- 0
+
+##############################################Correlation Coefficient between Terrestrial & Marine Speciation & Extinction with Temperature and Sea Level######################################################33
+##################Workshop-4
+
+#Load the package
+library(ggplot2)
+#Set a new DCCA function which calculates the correlation coefficient.
+DCCA <- function(x,y,s){
+  xx<-cumsum(x)
+  yy<-cumsum(y)
+  t<-1:length(xx)
+  F2sj_xy<-runif(floor(length(xx)/s))
+  F2sj_xx<-F2sj_xy
+  F2sj_yy<-F2sj_xy
+  for(ss in seq(1,(floor(length(xx)/s)*s),by=s)){
+    F2sj_xy[(ss-1)/s+1]<-sum((summary(lm(xx[ss:(ss+s-1)]~t[ss:(ss+s-1)]))$residuals)*(summary(lm(yy[ss:(ss+s-1)]~t[ss:(ss+s-1)]))$residuals))/(s-1)
+    F2sj_xx[(ss-1)/s+1]<-sum((summary(lm(xx[ss:(ss+s-1)]~t[ss:(ss+s-1)]))$residuals)*(summary(lm(xx[ss:(ss+s-1)]~t[ss:(ss+s-1)]))$residuals))/(s-1)
+    F2sj_yy[(ss-1)/s+1]<-sum((summary(lm(yy[ss:(ss+s-1)]~t[ss:(ss+s-1)]))$residuals)*(summary(lm(yy[ss:(ss+s-1)]~t[ss:(ss+s-1)]))$residuals))/(s-1)
+  }
+  rho<-mean(F2sj_xy)/sqrt(mean(F2sj_xx)*mean(F2sj_yy))
+  return(c(rho,1/sqrt(length(xx)),1-pnorm(abs(rho),mean=0,sd=1/sqrt(length(xx)))))
+} 
+}
+### Speciation Terrestrial with Temperature and Sea Level
+#Flip times by subtracting the maximum from each to get rid of the minus sign.
+times = abs(rtt_T$times-max(rtt_T$times))
+#Calculate number of simulations in diversification data
+numberOfSims = length(rtt_T$lambda)/length(rtt_T$times)
+#Generate Correlation Coefficient 
+numberOfSamples = 100 #could increase to see the difference in correlation
+cors_temp_T <- rep(NA, numberOfSamples)
+cors_seaLevel_T <- rep(NA, numberOfSamples)
+set.seed(1) #to compare results with others
+
+samples = sample(1:numberOfSims, numberOfSamples, replace = FALSE)
+####Terrestrial Speciation and Temperature
+count = 1
+#Setting the loop from 1 to number of simulations
+for (I in 1:numberOfSims ) { 
+  if (I %in% samples){   #Check if the required sample is available
+#This line takes our speciation rates (lambda) and the corresponding times and interpolates the lambda onto the temperature times.
+    interpdiv =  pprox.(times, rtt_T$lambda[I,], temperature$V1, method=’linear’, rule=1) #temperature v1= time in millions and v2 (is a ratio) is temp proxy, ratios of o2 isotopes from fossils. 
+ #Here we check whether there is a lambda for every temperature time, if not it's left as NA  
+end = which(is.na(interpdiv$y)) 
+# If we have no NAs, ie. there is a time in the temperature time series for each lambda, we just use the interpolation as already calculated
+    if (length(end) == 0) {
+      div_rates = interpdiv$y 
+      ft = finaltemp
+      #div_rates = speciation / diversification (net div = speciation – ext)
+    }
+#Otherwise, we only grab and use the times that have both lambda and temperature data
+    else {div_rates = interpdiv$y[-end]
+    ft = finaltemp[-end]}
+#Correlation using the interpolated data
+    c = DCCA(as.numeric(unlist(div_rates)),as.numeric(unlist(ft)),length(ft)/10) #c= correlation, /10 = for ddca func for sensible moving graphs (bars)
+ # Store the correlation co-efficient
+cors_temp_T[count] = c[1] #starting the correlation to 1 and as the sample is set to 100 it will stop there
+#Increase the count by 1 ready for the next correlation    
+count = count+1
+  }
+}
+dev.off() #Used this command as it was showing error in graphics
+#Plot the correlation coefficients as a histogram.
+plot=qplot(cors_temp_T, geom=”histogram”, bins=30, xlab = “Correlation Coeffecient between Terrestrial Speciation and Temperature”, ylab = “Frequency”)
+plot
+#relation between temp and speciation, when temp is high the speciation is high, 0= no relation, -1= speciation is inversely proportional ,1 = really strong relationship 
+plot2 = plot + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = “black”))
+plot2 +
+  scale_x_continuous( breaks = c (0.0, 0.2, 0.4, 0.8, 1, 1.2, 1.4)) +
+  geom_histogram( fill= “#c3ff1f”, col = “black”) #change colours
+ #Save as pdf
+ ggsave(plot2,file=”SpeciationTerrestrialTemperature.pdf”)
+#Set file name
+sink(file=”SpeciationTerrestrialTemperatureStats.txt”)
+#Calculate and print to file some summary statistics
+print(summary(cors_temp_T))
+print(quantile(cors_temp_T, c(0.025, 0.975))) #creating a text file and put the summary of temp data at 97.5% and don’t look at whole but 95% of data, to decide if something is meaningful. 
+# Carry out a Wilcoxon unpaired test to test for significance. This will calculate the Wilcoxon test statistic and the p-value.
+Stats <- (wilcox.test(cors_temp_T, mu=0.0, paired = FALSE))
+#Get the p value
+stats$p.value
+#Close sink
+sink()
+
+##Terrestrial Speciation and Sea Level
+count = 1
+#Setting the loop from 1 to number of simulations
+for (I in 1:numberOfSims ) {
+# Check if it’s the desired sample
+  if (I %in% samples){
+#If yes, do the correlation and start by interpolating the data.
+  interpdiv =  pprox.(times, rtt_T$lambda[I,], seaLevel$Age, method=’linear’, rule=1)
+  end = which(is.na(interpdiv$y))
+  if (length(end) == 0) {
+    div_rates = interpdiv$y
+    ft = seaLevel$SL
+  } else {
+    div_rates = interpdiv$y[-end]
+    ft = seaLevel$SL[-end]
+  }
+#Correlation using the interpolated data
+  c = DCCA(as.numeric(unlist(div_rates)),as.numeric(unlist(ft)),length(ft)/10)
+  # Store the correlation co-efficient
+ cors_seaLevel_T[count] = c[1]
+#Increase the count by 1 ready for the next correlation      
+count = count+1
+}
+}
+#Plot the correlation coefficients as a histogram.
+plot=qplot(cors_seaLevel_T, geom=”histogram”, bins=30, xlab = “Correlation Coeffecient between Terrestrial Speciation and Sea Level”, ylab = “Frequency”)
+plot
+plot2 = plot + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = “black”))
+plot2+
+  scale_x_continuous( breaks = c (-0.6, -0.5, -0.4, -0.3, -0.2, -0.08)) +
+  geom_histogram( fill=”#29ffa2”, col = “black”)
+  #Save as pdf 
+ggsave(plot2,file=”SpeciationTerrestrialSeaLevel.pdf”)
+#Set file name
+sink(file=”SpeciationTerrestrialSeaLevelStats.txt”)
+#Calculate and print to file some summary statistics
+print(summary(cors_seaLevel_T))
+print(quantile(cors_seaLevel_T, c(0.025, 0.975))) 
+# Carry out a Wilcoxon unpaired test to test for significance. This will calculate the Wilcoxon test statistic and the p-value.
+stats <- (wilcox.test(cors_temp_T, mu=0.0, paired = FALSE))
+#Get the p value
+stats$p.value
+#Close sink
+sink()
+save.image(“Crocs_Workshop4.Rdata”)
+
+###Marine Speciation with Temperature and Sea level
+#Flip times by subtracting the maximum from each to get rid of the minus sign.
+times = abs(rtt_M$times-max(rtt_M$times))
+#Calculate number of simulations in diversification data
+numberOfSims = length(rtt_M$lambda)/length(rtt_M$times)
+#Generate Correlation Coefficient 
+numberOfSamples = 100 #could be incr
+cors_temp_M <- rep(NA, numberOfSamples)
+cors_seaLevel_M <- rep(NA, numberOfSamples)
+set.seed(1) #to compare results with others
+
+samples = sample(1:numberOfSims, numberOfSamples, replace = FALSE)
+
+####Marine Speciation and Temperature
+count = 1
+#Setting the loop from 1 to number of simulations
+for (I in 1:numberOfSims ) {
+  if (I %in% samples){   
+    interpdiv =  pprox.(times, rtt_M$lambda[I,], temperature$V1, method=’linear’, rule=1)
+    #(This line takes our speciation rates (lambda) and the corresponding times and interpolates the lambda onto the temperature times.)
+    end = which(is.na(interpdiv$y)) #temperature v1= time in millions and v2 (is a ratio) is temp proxy, ratios of o2 isotopes from fossils. 
+    
+    If (length(end) == 0) {
+      div_rates = interpdiv$y 
+      ft = finaltemp
+      #div_rates = speciation / diversification (net div = speciation – ext)
+    }
+    else {div_rates = interpdiv$y[-end]
+    ft = finaltemp[-end]}
+    #Correlation using the interpolated data
+    c = DCCA(as.numeric(unlist(div_rates)),as.numeric(unlist(ft)),length(ft)/10) #c= correlation, /10 = for ddca func for sensible moving graphs (bars)
+# Store the correlation co-efficient    
+cors_temp_M[count] = c[1] #starting the correlation to 1 and as the sample is set to 100 it will stop there
+#Increase the count by 1 ready for the next correlation
+    count = count+1
+  }
+}
+#Plot the correlation coefficients as a histogram.
+plot=qplot(cors_temp_M, geom=”histogram”, bins=30,xlab = “Correlation Coeffecient between Marine Speciation and Temperature”, ylab = “Frequency”)
+plot
+plot2 = plot + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = “black”))
+plot2 +
+  geom_histogram( fill=”#09ba82”, col = “black”)
+#Save as pdf
+ggsave(plot2,file=”SpeciationMarineTemperature.pdf”)
+#Set file name
+sink(file=”SpeciationMarineTemperatureStats.txt”)
+#Calculate and print to file some summary statistics
+print(summary(cors_temp_M))
+print(quantile(cors_temp_M, c(0.025, 0.975))) #creating a text file and put the summary of temp data at 97.5% and don’t look at whole but 95% of data, to deide if something is meaningful. 
+# Carry out a Wilcoxon unpaired test to test for significance. This will calculate the Wilcoxon test statistic and the p-value.
+Stats <- (wilcox.test(cors_temp_M, mu=0.0, paired = FALSE))
+#Get the p value
+stats$p.value
+#Close sink
+sink()
+##Marine Speciation and Sea Level
+count = 1
+#Setting the loop from 1 to number of simulations
+for (I in 1:numberOfSims ) {
+  if (I %in% samples){
+    
+    interpdiv =  pprox.(times, rtt_M$lambda[I,], seaLevel$Age, method=’linear’, rule=1)
+    end = which(is.na(interpdiv$y))
+    if (length(end) == 0) {
+      div_rates = interpdiv$y
+      ft = seaLevel$SL
+    } else {
+      div_rates = interpdiv$y[-end]
+      ft = seaLevel$SL[-end]
+    }
+#Correlation using the interpolated data
+    c = DCCA(as.numeric(unlist(div_rates)),as.numeric(unlist(ft)),length(ft)/10)
+# Store the correlation co-efficient    
+cors_seaLevel_M[count] = c[1]
+#Increase the count by 1 ready for the next correlation    
+    count = count+1
+  }
+}
+#Plot the correlation coefficients as a histogram.
+plot=qplot(cors_seaLevel_M, geom=”histogram”, bins=30, xlab = “Correlation Coeffecient between Marine Speciation and Sea Level”, ylab = “Frequency”)
+plot
+plot2 = plot + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = “black”))
+plot2+
+  geom_histogram( fill=”#0368ff”, col = “black”)
+#Save as pdf
+ggsave(plot2,file=”SpeciationMarineSeaLevel.pdf”)
+#Set file name
+sink(file=”SpeciationMarineSeaLevelStats.txt”)
+#Calculate and print to file some summary statistics
+print(summary(cors_seaLevel_M))
+print(quantile(cors_seaLevel_M, c(0.025, 0.975))) 
+# Carry out a Wilcoxon unpaired test to test for significance. This will calculate the Wilcoxon test statistic and the p-value.
+stats <- (wilcox.test(cors_temp_M, mu=0.0, paired = FALSE))
+#Get the p value
+stats$p.value
+#Close sink
+sink()
+
+#############3#####Extinction Terrestrial Temperature and Sea level 
+#Flip times by subtracting the maximum from each to get rid of the minus sign.
+times = abs(rtt_T$times-max(rtt_T$times))
+#Calculate number of simulations in diversification data
+numberOfSims = length(rtt_T$mu)/length(rtt_T$times)
+
+#Generate Correlation Coefficient 
+numberOfSamples = 100 #could be incr
+cors_temp_TE <- rep(NA, numberOfSamples)
+cors_seaLevel_TE <- rep(NA, numberOfSamples)
+set.seed(1) #to compare results with others
+
+samples = sample(1:numberOfSims, numberOfSamples, replace = FALSE)
+####Terrestrial Extinction and Temperature
+count = 1
+#Setting the loop from 1 to number of simulations
+for (i in 1:numberOfSims ) {
+  if (i %in% samples){   
+    interpdiv = approx(times, rtt_T$mu[i,], temperature$V1, method='linear', rule=1)
+    #(This line takes our speciation rates (lambda) and the corresponding times and interpolates the lambda onto the temperature times.)
+    end = which(is.na(interpdiv$y)) #temperature v1= time in millions and v2 (is a ratio) is temp proxy, ratios of o2 isotopes from ossils. When it's colder they store more o2 and more isotopes in he shells and when it's warmer there's o2-16 in the ocean so morein th shells so more ratios of o2-16 to o2-18 but in colder more o-18 as o-16 is inside the ice
+    
+    if (length(end) == 0) {
+      div_rates = interpdiv$y 
+      ft = finaltemp
+      #div_rates = speciation / diversification (net div = speciation - ext)
+    }
+    else {div_rates = interpdiv$y[-end]
+    ft = finaltemp[-end]}
+ #Correlation using the interpolated data   
+    c = DCCA(as.numeric(unlist(div_rates)),as.numeric(unlist(ft)),length(ft)/10) #c= correlation, /10 = for ddca func for sensible moving graphs (bars)
+# Store the correlation co-efficient    
+cors_temp_TE[count] = c[1] #starting the correlation to 1 and as the sample is set to 100 it will stop there
+#Increase the count by 1 ready for the next correlation    
+    count = count+1
+  }
+}
+#Plot the correlation coefficients as a histogram.
+plot=qplot(cors_temp_TE, geom="histogram", bins=30, xlab = "Correlation Coeffecient between Terrestrial Extinction and Temperature", ylab = "Frequency")
+plot
+plot2 = plot + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"))
+plot2 +
+  geom_histogram( fill= "#c3ff1f", col = "black")
+
+#Save as pdf
+ggsave(plot2,file="ExtinctionTerrestrialTemperature.pdf")
+#Set file name
+sink(file="ExtinctionTerrestrialTemperatureStats.txt")
+#Calculate and print to file some summary statistics
+print(summary(cors_temp_TE))
+print(quantile(cors_temp_TE, c(0.025, 0.975))) 
+
+# Carry out a Wilcoxon unpaired test to test for significance. This will calculate the Wilcoxon test statistic and the p-value.
+stats <- (wilcox.test(cors_temp_TE, lambda=0.0, paired = FALSE))
+#Get the p value
+stats$p.value
+#Close sink
+sink()
+####Terrestrial Extinction and Sea Level
+count = 1
+#Setting the loop from 1 to number of simulations
+for (i in 1:numberOfSims ) {
+  if (i %in% samples){
+    
+    interpdiv = approx(times, rtt_T$mu[i,], seaLevel$Age, method='linear', rule=1)
+    end = which(is.na(interpdiv$y))
+    if (length(end) == 0) {
+      div_rates = interpdiv$y
+      ft = seaLevel$SL
+    } else {
+      div_rates = interpdiv$y[-end]
+      ft = seaLevel$SL[-end]
+    }
+#Correlation using the interpolated data
+    c = DCCA(as.numeric(unlist(div_rates)),as.numeric(unlist(ft)),length(ft)/10)
+# Store the correlation co-efficient   
+ cors_seaLevel_TE[count] = c[1]
+#Increase the count by 1 ready for the next correlation    
+    count = count+1
+  }
+}
+#Plot the correlation coefficients as a histogram.
+plot=qplot(cors_seaLevel_TE, geom="histogram", bins=30, xlab = "Correlation Coeffecient between Terrestrial Extinction and Sea Level", ylab = "Frequency")
+plot
+plot2 = plot + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"))
+plot2+
+  geom_histogram( fill="#29ffa2", col = "black")
+
+#Save as pdf
+ggsave(plot2,file="ExtinctionTerrestrialSeaLevel.pdf")
+#Set file name
+sink(file="ExtinctionTerrestrialSeaLevelStats.txt")
+#Calculate and print to file some summary statistics
+print(summary(cors_seaLevel_TE))
+print(quantile(cors_seaLevel_TE, c(0.025, 0.975))) 
+# Carry out a Wilcoxon unpaired test to test for significance. This will calculate the Wilcoxon test statistic and the p-value.
+stats <- (wilcox.test(cors_seaLevel_TE, lambda=0.0, paired = FALSE))
+#Get the p value
+#Close sink
+stats$p.value
+sink()
+
+
+#####Marine Extinction Temperature and Sea Level
+#Flip times by subtracting the maximum from each to get rid of the minus sign.
+times = abs(rtt_M$times-max(rtt_M$times))
+#Calculate number of simulations in diversification data
+numberOfSims = length(rtt_M$mu)/length(rtt_M$times)
+#Generate Correlation Coefficient 
+numberOfSamples = 100 #could be incr
+cors_temp_ME <- rep(NA, numberOfSamples)
+cors_seaLevel_ME <- rep(NA, numberOfSamples)
+set.seed(1) #to compare results with others
+
+samples = sample(1:numberOfSims, numberOfSamples, replace = FALSE)
+
+#####Marine Extinction and Temperature
+count = 1
+#Setting the loop from 1 to number of simulations
+for (i in 1:numberOfSims ) {
+  if (i %in% samples){   
+    interpdiv = approx(times, rtt_M$mu[i,], temperature$V1, method='linear', rule=1)
+    #(This line takes our speciation rates (lambda) and the corresponding times and interpolates the lambda onto the temperature times.)
+    end = which(is.na(interpdiv$y)) #temperature v1= time in millions and v2 (is a ratio) is temp proxy, ratios of o2 isotopes from ossils. When it's colder they store more o2 and more isotopes in he shells and when it's warmer there's o2-16 in the ocean so morein th shells so more ratios of o2-16 to o2-18 but in colder more o-18 as o-16 is inside the ice
+    
+    if (length(end) == 0) {
+      div_rates = interpdiv$y 
+      ft = finaltemp
+      #div_rates = speciation / diversification (net div = speciation - ext)
+    }
+    else {div_rates = interpdiv$y[-end]
+    ft = finaltemp[-end]}
+    #Correlation using the interpolated data
+    c = DCCA(as.numeric(unlist(div_rates)),as.numeric(unlist(ft)),length(ft)/10) #c= correlation, /10 = for ddca func for sensible moving graphs (bars)
+# Store the correlation co-efficient    
+cors_temp_ME[count] = c[1] #starting the correlation to 1 and as the sample is set to 100 it will stop there
+#Increase the count by 1 ready for the next correlation 
+    count = count+1
+  }
+}
+#Plot the correlation coefficients as a histogram.
+plot=qplot(cors_temp_ME, geom="histogram", bins=30,xlab = "Correlation Coeffecient between Marine Extinction and Temperature", ylab = "Frequency")
+plot
+plot2 = plot + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"))
+plot2 +
+  geom_histogram( fill="#09ba82", col = "black")
+#Save as pdf
+ggsave(plot2,file="ExtinctionMarineTemperature.pdf")
+#Set file name
+sink(file="ExtinctionMarineTemperatureStats.txt")
+#Calculate and print to file some summary statistics
+print(summary(cors_temp_ME))
+print(quantile(cors_temp_ME, c(0.025, 0.975))) #creating a text file and put the summary of temp data at 97.5% and don't look at whole but 95% of data, to deide if something is meaningful. 
+# Carry out a Wilcoxon unpaired test to test for significance. This will calculate the Wilcoxon test statistic and the p-value.
+stats <- (wilcox.test(cors_temp_ME, lambda=0.0, paired = FALSE))
+#Get the p value
+stats$p.value
+#Close sink
+sink() 
+
+#####Marine Speciation and Sea Level
+count = 1
+#Setting the loop from 1 to number of simulations
+for (i in 1:numberOfSims ) {
+  if (i %in% samples){
+    
+    interpdiv = approx(times, rtt_M$lambda[i,], seaLevel$Age, method='linear', rule=1)
+    end = which(is.na(interpdiv$y))
+    if (length(end) == 0) {
+      div_rates = interpdiv$y
+      ft = seaLevel$SL
+    } else {
+      div_rates = interpdiv$y[-end]
+      ft = seaLevel$SL[-end]
+    }
+#Correlation using the interpolated data   
+ c = DCCA(as.numeric(unlist(div_rates)),as.numeric(unlist(ft)),length(ft)/10)
+# Store the correlation co-efficient    
+cors_seaLevel_ME[count] = c[1]
+#Increase the count by 1 ready for the next correlation    
+    count = count+1
+  }
+}
+#Plot the correlation coefficients as a histogram.
+plot=qplot(cors_seaLevel_ME, geom="histogram", bins=30, xlab = "Correlation Coeffecient between Marine Speciation and Sea Level", ylab = "Frequency")
+plot
+plot2 = plot + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"))
+plot2+
+  geom_histogram( fill="#0368ff", col = "black")
+#Save as pdf
+ggsave(plot2,file="ExtinctionMarineSeaLevel.pdf")
+#Set file name
+sink(file="ExtinctionMarineSeaLevelStats.txt")
+#Calculate and print to file some summary statistics
+print(summary(cors_seaLevel_ME))
+print(quantile(cors_seaLevel_ME, c(0.025, 0.975))) 
+# Carry out a Wilcoxon unpaired test to test for significance. This will calculate the Wilcoxon test statistic and the p-value.
+stats <- (wilcox.test(cors_temp_ME, lambda=0.0, paired = FALSE))
+#Get the p value
+stats$p.value
+#Close sink
+sink()
+####################################################################################Lineages Through Time######################################################################################
+############(Extra Data)
+
+#Load package
+library (tidyverse)
+#Load the Terrestrial and Marine data
+TerLTT <- read.csv("LTT_Terrestrial.csv")
+MerLTT <- read.csv("LTT_Marine.csv")
+#Plot the line graphs for terrestrial and marine species
+ggplot() +
+  geom_line(data = TerLTT, aes (x= time, y= N), color = "green3") + #to colour the Terrestrial LTT line plot
+  geom_line(data = MerLTT, aes (x= time, y= N, color = "N")) + #this adds a legend
+#Add the names of the x-axis and y-axis
+labs (x= "Time Before Present (MYR)", y= "Number of Species") +
+#Reverse the x-axis as it is time before present
+scale_x_reverse(lim=c(250, 0)) +
+#Color code and edit the legends
+scale_color_manual("Types of species", values = c ("Terrestrail"="green3", "N"= "blue"), labels= c("Terrestrial", "Marine")) + 
+#Add black and white theme
+theme_bw()
+###########################################################################Concentration of Atmospheric Carbondioxide##################################################################
+####################(Extra Data)
+
+#Load package
+library (tidyverse)
+#Load the atmospheric CO2 data
+atmco <- read.csv ("AtmosphericCO2.csv")
+#Plot the line graph
+ggplot() +
+  geom_line (data = atmco, aes (x= time, y= data), color = "red") +
+#Add the names of the x-axis and y-axis
+  labs (x= "Time Before Present (MYR)", y= "Concentration of Atmospheric Carbondioxide (ppm)") +
+#Reverse the x-axis as it is time before present
+  scale_x_reverse(lim=c(250, 0)) +
+#Add black and white theme
+  theme_bw()
