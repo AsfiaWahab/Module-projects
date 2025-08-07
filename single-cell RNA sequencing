@@ -1,0 +1,508 @@
+Running FASTQC (Workshop-4)
+#Make a directory for Hypoxia 
+mkdir Hypoxia-assessment
+cd Hypoxia-assessment/ 
+#Make directories for FASTQC on the subset of the data, Aligning the subset of the data to that to human genome and one for Differential Expression and Gene Ontology 
+mkdir FastQC Alignment-subset DEA-GO 
+#Load the FastQC module 
+module load bio/FastQC/0.11.9-Java-11 
+#Perform FastQc on each sample one by one
+fastqc -o ./ ~/genomics/rnaseq_data/02_hypoxia_assessment_dataset/hypoxia-01_read1.fq.gz 
+#So next time use ‘&’ as it takes a long time to run
+fastqc -o ./ ~/genomics/rnaseq_data/02_hypoxia_assessment_dataset/hypoxia-01_read2.fq.gz &  
+ #So create a loop like this and keep it running 
+for readfile in n*gz 
+> do
+> fastqc -o ./ ~/genomics/rnaseq_data/02_hypoxia_assessment_dataset/n*gz 
+> done 
+#And it shows: 
+Started analysis of normoxia-01_read1.fq.gz Approx 5% complete for normoxia-01_read1.fq.gz Approx 10% complete for normoxia-01_read1.fq.gz
+ .....
+ #Make a directory for the zipped files to separate those files from the html files 
+mkdir Zippedfiles 
+mv *zip .../Zippedfiles/ 
+Pseudoalignment of the RNA-seq files (Workshop-4)
+#Run Kallisto Quant in a loop for Hypoxia and Normoxia
+#First make a separate screen using
+screen -S kallisto
+#Then run the modified loop:
+for readfile in ~/genomics/rnaseq_data/02_hypoxia_assessment_dataset/*read1*; 
+>do r2=`echo $readfile | sed 's/read1/read2/'`; sample=`echo $readfile | rev | cut -d'/' -f1 | rev | cut -d'_' -f1`; 
+>echo $readfile
+>echo $r2 
+>echo $sample
+>echo ""
+>kallisto quant --index ~/genomics/rnaseq_data/gencode.v44.pc_transcripts-kallisto --output-dir=$sample --bootstrap-samples=20 $readfile $r2
+>done
+#Now converting the kallisto output to gene expression level matrix
+#So at first, rename all the abundance files of each directories to a more specific ones like abundance file in Hyp-01 to Hyp1_abundance.
+for dir in *
+> do cp ${dir}/abundance.tsv ${dir}_abundance.tsv
+> done
+#Output:
+hypoxia-01                normoxia-01
+hypoxia-01_abundance.tsv  normoxia-01_abundance.tsv
+hypoxia-02                normoxia-02
+hypoxia-02_abundance.tsv  normoxia-02_abundance.tsv
+hypoxia-03                normoxia-03
+hypoxia-03_abundance.tsv  normoxia-03_abundance.tsv
+hypoxia-04                normoxia-04
+hypoxia-04_abundance.tsv  normoxia-04_abundance.tsv
+#To make it a bit more organised I made a directory and moved those files in that directory
+mkdir abundance-files | mv h*tsv n*tsv abundance-files
+#Use R to combine the hypoxia and normoxia data in an organised way in the 't2g' file format. Because now the tsv files have the target id and the lengths,
+#But we can organise according the genename and which genes are more expressed in which cases
+
+#######R######
+# create directories for installed R libraries to go 
+mkdir ~/Rlibs ~/Rlibs/R_4.1.2
+# R from the linux terminal
+R
+#Install all the packages and load libraries
+install.packages("ggrepel", lib="~/Rlibs/R_4.1.2")
+install.packages("BiocManager", lib="~/Rlibs/R_4.1.2")
+library("BiocManager", lib.loc="~/Rlibs/R_4.1.2")
+BiocManager::install("tximport", lib="~/Rlibs/R_4.1.2")
+BiocManager::install("rhdf5", lib="~/Rlibs/R_4.1.2")
+install.packages("remotes", lib="~/Rlibs/R_4.1.2")
+library("remotes", lib.loc="~/Rlibs/R_4.1.2")
+remotes::install_github("pachterlab/sleuth", lib="~/Rlibs/R_4.1.2")
+remotes::install_github("kevinblighe/EnhancedVolcano", lib="~/Rlibs/R_4.1.2")
+remotes::install_github("ctlab/fgsea", lib="~/Rlibs/R_4.1.2")
+library ("tximport", lib.loc="~/Rlibs/R_4.1.2")
+#Rename the .t2g file as just t2g
+t2g <- read.csv("~/genomics/rnaseq_data/gencode.v44.pc_transcripts.t2g", sep="\t", header=TRUE)
+#list all the tsv files in a folder named 'files'
+files <- list.files(".","tsv$")
+#Name all the .tsv files according to their origin in the files folder
+names(files) <- gsub("_abundance.tsv","",files)
+#Use tximport ro combine the name
+ txi <- tximport(files, type = "kallisto", tx2gene = t2g, ignoreTxVersi
+on =TRUE, ignoreAfterBar=TRUE)
+#Output
+Note: importing `abundance.h5` is typically faster than `abundance.tsv`
+reading in files with read_tsv
+1 2 3 4 5 6 7 8
+summarizing abundance
+summarizing counts
+summarizing length
+#Change the data frame and add desired data like genes
+txiDF <- as.data.frame(txi$abundance)
+ txiDF <-cbind(genes = rownames(txiDF), txiDF)
+ rownames(txiDF) <- NULL
+write.table(txiDF, file="All_abundance-TPMs.tsv", sep="\t", quote=FALS
+E, row.names=FALSE)
+#Quit R from Linux
+ q()
+#Now we combined all the data with the model file and named out combined file as All_abundance-TPMs.tsv
+# Check the presence of different genes like MKI67 or KRT13 and how much these are expressed on different hypoxia and normoxia samples.
+head -n 1 All_abundance-TPMs.tsv; egrep "MKI67"
+ #egrep is used instead of grep to make the first line of the file (heading) visible
+#output
+genes   hypoxia-01      hypoxia-02      hypoxia-03      hypoxia-04     normoxia-01      normoxia-02     normoxia-03     normoxia-04
+MKI67   0.127676        0.122299        0.03170628      0.3417586      0.71308  0.483495        0.1369348       0.166908651
+Differential Expression Analysis (Workshop-4)
+##First make an experimental design file for sleuth
+echo -e "sample\texpress\tbiorep\tpath" > HN_DEA.info
+#Now make a loop from the abundance.h5 files out of kallisto output and put that information into that .info file
+for sampledir in ~/genomics/students/STUDENTID/*/abundance.h5
+> do
+> sample=`echo $sampledir | rev | cut -d'/' -f2 | rev`
+> donor=`echo $sample | cut -d'-' -f2`
+> exp=`echo $sample | awk -v sample=$sample '{if (sample~/^hypoxia/) {print "0"} else {print "1"}}'`
+> echo -e $sample'\t'$exp'\t'$donor'\t'$sampledir >> HN_DEA.info
+> done
+###R
+#Load the library
+> library(readr)
+> library("sleuth",lib.loc="~/Rlibs/R_4.1.2/")
+#Read the table you have created from the loop
+> s2c <- read.table("HN_DEA.info", header=TRUE, stringsAsFactors=FALSE)
+> t2g <- dplyr::select(read.table("~/genomics/rnaseq_data/gencode.v44.pc_transcripts.t2g", header=TRUE, stringsAsFactors=FALSE), target_id = ensembl_transcript_id, ext_gene = external_gene_name)
+#Run Sleuth
+> so <- sleuth_prep(s2c, ~express + biorep, extra_bootstrap_summary=TRUE, num_cores=1, target_mapping=t2g, transformation_function = function(x) log2(x+1.5), gene_mode=TRUE, aggregation_column = 'ext_gene')  #so means sleuth object
+#Output
+'gene_mode' is TRUE. Sleuth will do counts aggregation at the gene level for downstream normalization, transformation, and modeling steps, as well as for plotting and results.
+reading in kallisto results
+dropping unused factor levels
+........
+normalizing est_counts
+61024 targets passed the filter
+normalizing tpm
+merging in metadata
+aggregating by column: ext_gene
+15786 genes passed the filter
+summarizing bootstraps
+........
+There were 18 warnings (use warnings() to see them)
+#Use sleuth_fit in 'full' to fit the statistical models and when used full it will account for the variation due to experimental condition and donor background
+> so <- sleuth_fit(so, ~express + biorep, 'full')
+#Output
+fitting measurement error models
+shrinkage estimation
+2 NA values were found during variance shrinkage estimation due to mean observation values outside of the range used for the LOESS fit.
+The LOESS fit will be repeated using exact computation of the fitted surface to extrapolate the missing values.
+These are the target ids with NA values: STAB2, MT-CO1
+computing variance of betas
+#Then use 'reduced' so that the statistical model only accounts for the variance just the difference between the donors
+> so <- sleuth_fit(so, ~biorep, 'reduced')
+fitting measurement error models
+shrinkage estimation
+6 NA values were found during variance shrinkage estimation due to mean observation values outside of the range used for the LOESS fit.
+The LOESS fit will be repeated using exact computation of the fitted surface to extrapolate the missing values.
+These are the target ids with NA values: A2M, ADCY2, GPR182, MROH2A, NDNF, STAB2
+computing variance of betas
+##It shows 6 NA values are found
+#Now perform a LRT test to identify any significant changes between the full and reduced data
+> so <- sleuth_lrt(so, 'reduced', 'full')
+#Finally make a table of the reduced:ful data based on the lrt values
+> sleuth_table <- sleuth_results(so, 'reduced:full', test_type='lrt', show_all = FALSE)
+#Make a file
+> write.table(distinct(as.data.frame(sleuth_table)[,c("target_id","pval","qval")]),file="HN_DEA-results.tsv",sep="\t",row.names=FALSE,col.names=TRUE)
+> q()
+
+#Create a soft link of the all abundance TPM .tsv file you made using tximport
+ln -s ~/genomics/students/STUDENTID/All_abundance-TPMs.tsv
+#Use R to combine the TPM and LRT results on a volcano plot
+#Load libraries
+> library(tidyverse)
+> library(dplyr)
+#Read the file
+> tpms1 <- read.table("All_abundance-TPMs.tsv", header=TRUE)
+#Observe the first few lines of the file
+> head(tpms1)
+    genes hypoxia.01 hypoxia.02 hypoxia.03 hypoxia.04 normoxia.01 normoxia.02
+1    A1BG  3.4205250  2.1038365  3.9493310  2.2601840   3.1522220    1.273958
+2    A1CF  0.0388964  0.0764126  0.1106146  0.0975824   0.0415948    0.079163
+3     A2M  0.0366163  0.0502933  0.0163384  0.0000000   0.0939238    0.043106
+4   A2ML1  8.7370230  5.7374390  2.8942290  5.8859090   9.0598910    6.288899
+5 A3GALT2  0.0439000  0.0000000  0.0482697  0.1082500   0.0933410    0.000000
+6  A4GALT 61.1563400 50.8287800 38.1297616 70.8095000  79.6176600   68.604100
+  normoxia.03 normoxia.04
+1   3.0449700   1.0671045
+2   0.0444456   0.0733076
+3   0.1334765   0.0168484
+4   3.2311580  12.8202830
+5   0.2724270   0.2994900
+6  64.9110100  84.1712800
+#Include more dataset in the file
+# Add the average condition TPMs for each gene
+tpms1 <- mutate(tpms1, hypoxia_avg = rowMeans(select(tpms1, starts_with("hypoxia"))))
+tpms1 <- mutate(tpms1, normoxia_avg = rowMeans(select(tpms1, starts_with("normoxia"))))
+# the log2FC so that positive values are genes with higher expression in Hypoxia and add "+1" to prevent genes with low expression to get higher fold change.
+tpms1 <- mutate(tpms1, log2FC = log2((hypoxia_avg+1)/(normoxia_avg+1)))
+# round all value columns to 2 decimal places to make it more manageable(!)
+tpms1 <- mutate(tpms1, across(2:ncol(tpms1), round, 2))
+#Read the differential expression analysis results
+dea <- read.table("HN_DEA-results.tsv", header=TRUE)
+#Combine the TPMs and our DEA results using a left join on the gene names
+res <- tpms1 %>% left_join(dea, by=c("genes"="target_id"))
+#Replace NA values with 1 (i.e. not significant) because sleuth cannot do a stat comparison if the p and q values are NA 
+res[is.na(res)] <- 1
+#Create a combined metric of fold change and significance called a pi value
+res <- mutate(res, pi = (log2FC * (-1 * log10(qval))))
+#Save the data
+write.table(res, file="TPMs1_and_DEA_results_file.tsv", sep="\t", row.names=FALSE, col.names=TRUE)
+###########Enhanced Volcano
+#Load the libraries
+library (ggrepel)
+library(EnhancedVolcano)
+#Check how many significantly different genes are there using log2FC >=2.5 (215% increase) or <=-2.5 (215% decrease) and qvalue of <0.05
+sum(res$log2FC>=2.5 & res$qval<0.05)
+sum(res$log2FC<=-2.5 & res$qval<0.05)
+#Create list of most significantly different genes for labelling the volcano plot
+siggenes <- (res %>% arrange(desc(abs(pi))) %>% slice(1:27))$genes
+# Volcano plot
+EnhancedVolcano(res, 
+                x = "log2FC", 
+                y = "qval", 
+                title = "Differential Expression Analysis",
+                subtitle = "Enhanced Volcano Plot",
+                FCcutoff = 2.5, 
+                pCutoff = 0.05,
+                lab = res$genes, 
+                selectLab = siggenes,  
+                labSize = 3.0,
+                legendLabels=c('Not significant','Log (base 2) FC','q-value', 'q-value & Log (base 2) FC'),
+                max.overlaps = 1000, 
+                ylim = c(0, (max(-1*log10(res$qval)) + 0.5)), 
+                xlim = c((max(abs(res$log2FC))*-1), max(abs(res$log2FC))+1),
+                colAlpha = 4/5,
+                pointSize = 2.0,
+                legendPosition = 'right',
+                legendLabSize = 12,
+                legendIconSize = 4.0,
+                drawConnectors = TRUE,
+                widthConnectors = 0.75)
+ + coord_flip() #Flip the coordinates to get a better visualisation of the 
+#################Gene Set Enrichment Analysis (GSEA)#########################
+#Load the libraries
+ library("fgsea")
+library(“ggplot2”)
+#Rank the biologically significant genes from most up to most down using the pi values
+prerank <- res[c("genes", "pi")]
+prerank <- setNames(prerank$pi, prerank$genes)
+str(prerank)
+#Output
+Named num [1:20374] 0.2196 0.0202 -0.0422 -0.0383 0 ...
+ - attr(*, "names")= chr [1:20374] "A1BG" "A1CF" "A2M" "A2ML1" ...
+#Run GSEA using a list of gene sets curated by MSigDB
+genesets = gmtPathways("h.all.v2023.2.Hs.symbols.gmt")
+fgseaRes <- fgsea(pathways = genesets, stats = prerank, minSize=15, maxSize=500)
+#Check the top most significant hits
+head(fgseaRes[order(pval), ], 10)
+#Ouput
+                               pathway
+ 1:                   HALLMARK_HYPOXIA
+ 2:                HALLMARK_GLYCOLYSIS
+ 3:          HALLMARK_MTORC1_SIGNALING
+ 4: HALLMARK_INTERFERON_ALPHA_RESPONSE
+ 5: HALLMARK_UNFOLDED_PROTEIN_RESPONSE
+ 6: HALLMARK_INTERFERON_GAMMA_RESPONSE
+ 7:               HALLMARK_P53_PATHWAY
+ 8:   HALLMARK_CHOLESTEROL_HOMEOSTASIS
+ 9:            HALLMARK_UV_RESPONSE_UP
+10:                HALLMARK_DNA_REPAIR
+            pval         padj
+ 1: 2.095644e-17 1.047822e-15
+ 2: 5.290203e-13 1.322551e-11
+ 3: 3.518818e-09 5.864697e-08
+ 4: 3.806509e-05 4.758136e-04
+ 5: 6.756784e-05 6.756784e-04
+ 6: 1.968424e-04 1.640353e-03
+ 7: 3.934727e-04 2.810520e-03
+ 8: 5.092954e-04 3.183096e-03
+ 9: 1.752707e-03 9.737262e-03
+10: 3.142935e-03 1.571468e-02
+      log2err         ES       NES
+ 1: 1.0768682  0.7847512  2.201944
+ 2: 0.9214260  0.7414091  2.080330
+ 3: 0.7749390  0.6946389  1.949097
+ 4: 0.5573322 -0.6853141 -1.780692
+ 5: 0.5384341  0.6568262  1.727097
+ 6: 0.5188481 -0.5665236 -1.583451
+ 7: 0.4984931  0.5540501  1.553801
+ 8: 0.4772708  0.6779749  1.651030
+ 9: 0.4550599  0.5456170  1.490107
+10: 0.4317077  0.5594132  1.520097
+    size
+ 1:  200
+ 2:  200
+ 3:  200
+ 4:   97
+ 5:  113
+ 6:  200
+ 7:  199
+ 8:   74
+ 9:  158
+10:  150
+                                  leadingEdge
+ 1:    ENO2,NDRG1,P4HA1,ALDOC,KDELR3,EDN2,...
+ 2:     EGLN3,ENO2,P4HA1,KDELR3,PLOD2,ANG,...
+ 3: EGLN3,TRIB3,P4HA1,PLOD2,SLC2A3,NIBAN1,...
+ 4:     GBP4,CD74,IRF1,SAMD9L,CCRL2,SP110,...
+ 5:    KDELR3,ERO1A,VEGFA,ATF3,STC2,YIF1A,...
+ 6:  CFB,TNFAIP2,GBP4,TNFSF10,RNF213,CD74,...
+ 7:    NDRG1,TRIB3,KLK8,DDIT3,CDKN1A,ATF3,...
+ 8:    TRIB3,ALDOC,PLAUR,NIBAN1,ATF3,GPX8,...
+ 9:     ENO2,CA2,SLC6A8,ALDOA,TUBA4A,ATF3,...
+10:        PNP,RRM2B,TAF13,DAD1,BRF2,RFC4,...
+#Load patchwork to join multiple plots in one figure
+library(patchwork)
+#Plot an enrichment plot for the significant pathways
+p1 <- plotEnrichment(genesets[["HALLMARK_HYPOXIA"]], prerank) + labs(title="Hypoxia") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p2 <- plotEnrichment(genesets[["HALLMARK_GLYCOLYSIS"]], prerank) + labs(title="Glycolysis") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p3 <- plotEnrichment(genesets[["HALLMARK_MTORC1_SIGNALING"]], prerank) + labs(title="MTORC1 signalling") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p4 <- plotEnrichment(genesets[["HALLMARK_UNFOLDED_PROTEIN_RESPONSE"]], prerank) + labs(title="Unfolded Protein Response") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p5 <- plotEnrichment(genesets[["HALLMARK_CHOLESTEROL_HOMEOSTASIS"]], prerank) + labs(title="Cholesterol Homeostasis") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p6 <- plotEnrichment(genesets[["HALLMARK_P53_PATHWAY"]], prerank) + labs(title="P53 Pathway") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p7 <- plotEnrichment(genesets[["HALLMARK_DNA_REPAIR"]], prerank) + labs(title="DNA Repair") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p8 <- plotEnrichment(genesets[["HALLMARK_UV_RESPONSE_UP"]], prerank) + labs(title="UV response (UP)") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p9 <- plotEnrichment(genesets[["HALLMARK_INTERFERON_GAMMA_RESPONSE"]], prerank) + labs(title="IFN-gamma response") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+p10 <- plotEnrichment(genesets[["HALLMARK_INTERFERON_ALPHA_RESPONSE"]], prerank) + labs(title="IFN-alpha response") +
+  theme_classic() +
+  scale_x_continuous('Preranked Dataset') +
+  scale_y_continuous('Enrichment Score (ES)')
+#Join the pathways
+p1+p2+p3+p4+p5+p6+p7+p8+p9+p10
+###############################GSEA Plot with Target genes###############################
+#Load the libraries
+ library("fgsea")
+library(“ggplot2”)
+#Make a list of target genes 
+genes1 <- c("CA2", "CASP14", "EGLN3", "ENO2", "KLK7", "NDUFA4L2", "P4HA1", 
+           "SLC1A6", "SLC2A3", "TFF2", "TRIB3", "ANKFN1", "CFB", "CLIC6", 
+           "CRISP3", "CRYM", "CYP24A1", "FAM3D", "GABBR2", "HPGD", "KRT4", 
+           "MAL", "METTL7A", "OR2I1P", "PIGR", "PRSS1", "SGK1", "TRIM31", 
+           "TXK", "UBD", "UPK1A", "UPK2", "UPK3A")
+# Filter rows based on selected genes
+selected_rows <- res[res$genes %in% genes1, ]
+# Create prerank data frame using selected rows
+prerank1 <- data.frame(genes = selected_rows$genes, pi = selected_rows$pi)
+# Set names for prerank
+prerank1 <- setNames(prerank1$pi, prerank1$genes)
+#Read the MSigDB pathways
+genesets1 = gmtPathways("h.all.v2023.2.Hs.symbols.gmt")
+#Run GSEA using a list of gene sets curated by MSigDB
+fgseaRes11 <- fgsea(pathways = genesets1, stats = prerank1, minSize=15, maxSize=500)
+#Plot an enrichment plot for the significant pathways
+g1 <- plotEnrichment(genesets1[["HALLMARK_HYPOXIA"]], prerank1) + labs(title="Hypoxia") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Positiont') +
+  scale_y_continuous('Enrichment Score (ES)')
+g2 <- plotEnrichment(genesets1[["HALLMARK_GLYCOLYSIS"]], prerank1) + labs(title="Glycolysis") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+g3 <- plotEnrichment(genesets1[["HALLMARK_MTORC1_SIGNALING"]], prerank1) + labs(title="MTORC1 signalling") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+g4 <- plotEnrichment(genesets1[["HALLMARK_UNFOLDED_PROTEIN_RESPONSE"]], prerank1) + labs(title="Unfolded Protein Response") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+g5 <- plotEnrichment(genesets1[["HALLMARK_CHOLESTEROL_HOMEOSTASIS"]], prerank1) + labs(title="Cholesterol Homeostasis") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+g6 <- plotEnrichment(genesets1[["HALLMARK_P53_PATHWAY"]], prerank1) + labs(title="P53 Pathway") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+
+g7 <- plotEnrichment(genesets1[["HALLMARK_DNA_REPAIR"]], prerank1) + labs(title="DNA Repair") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+
+g8 <- plotEnrichment(genesets1[["HALLMARK_UV_RESPONSE_UP"]], prerank1) + labs(title="UV response (UP)") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+
+g9 <- plotEnrichment(genesets1[["HALLMARK_INTERFERON_GAMMA_RESPONSE"]], prerank1) + labs(title="IFN-gamma response") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+
+g10 <- plotEnrichment(genesets1[["HALLMARK_INTERFERON_ALPHA_RESPONSE"]], prerank1) + labs(title="IFN-alpha response") +
+  theme_classic() +
+  scale_x_continuous('Prerank Gene Position') +
+  scale_y_continuous('Enrichment Score (ES)')
+#Print the result in one graph
+g1+g2+g3+g4+g5+g6+g7+g8+g9+g10
+#########################GSEA plot table of top pathways##################################
+#Load the library
+ library("fgsea")
+#Create a dataset of top significant upregulated pathways with padj < 0.05 and order it according to the NES
+topPathwaysUp <- fgseaRes[padj < 0.05][head(order(NES), n=5), pathway]
+#Create a dataset of top significant downregulated pathways with padj < 0.05 and order it according to the lowest NES
+topPathwaysDown <- fgseaRes[padj < 0.05][tail(order(NES), n=5), pathway]
+#Make a dataset with the upregulated and dowregulated pathways
+topPathways <- c(rev(topPathwaysDown), rev(topPathwaysUp))
+#Plot the GSEAtable
+plotGseaTable(genesets[topPathways], prerank, fgseaRes, gseaParam=0.5)
+
+##########################Scatter plot of the all the pathways ##############################
+##Scatter plot of the pathways against the -log10P
+#Load the libraries
+library(ggplot2)
+library(reshape2)
+#Create a dataset with selected values in a long format for ggpplot
+long_results <- melt(fgseaRes, id.vars = c("pathway","padj","size"), measure.vars = "NES")
+# Plot the enrichment score for each pathway and print it
+gsea_plot1 <- ggplot(long_results, aes(x = reorder(pathway, padj), y = -log10(padj), color = value, size = size)) +
+  scale_y_continuous(breaks = c(0, 2, 4, 6, 8, 10, 12, 14, 16)) +
+  geom_point(aes(shape = padj< 0.05)) +
+  scale_color_gradient(low = 'yellow2', high = 'red1') +
+  scale_size_continuous(name = 'Number of Genes', range = c(1.5, 5)) +
+  theme_bw() +
+  theme(text = element_text(family = "Arial", face = "bold", size = 10), legend.key = element_rect(size = 4)) +
+  coord_flip() + # Flip coordinates to display pathways on the y-axis
+  labs(x = "Hallmark Pathways", y = "-log10P", color = "NES", title = "Hallmark Pathways from GSEA")
+print(gsea_plot1)
+#######################################Heatmap######################################
+#Load pheatmap
+library(pheatmap)
+#Filter genes with log2FC > -2.5 and qval < 0.05
+upregulated_genes <- res[res$log2FC >= 2.5 & res$qval < 0.05, ]
+#Filter genes with log2FC < -2.5 and qval < 0.05
+downregulated_genes <- res[res$log2FC <= -2.5 & res$qval < 0.05, ]
+#Combine the two sets of genes
+selected_genes <- rbind(upregulated_genes, downregulated_genes)
+#Extract expression values for the heatmap
+heatmap_data <- selected_genes[, c("log2FC", "genes", "hypoxia.01", "hypoxia.02", "hypoxia.03", "hypoxia.04", "normoxia.01", "normoxia.02", "normoxia.03", "normoxia.04")]
+#Set row names to gene symbols
+rownames(heatmap_data) <- heatmap_data$genes
+heatmap_data$genes <- NULL
+#Create a heatmap 
+pheatmap(heatmap_data[, c("hypoxia.01", "hypoxia.02", "hypoxia.03", "hypoxia.04", "normoxia.01", "normoxia.02", "normoxia.03", "normoxia.04")],
+         cluster_rows = FALSE, cluster_cols = FALSE)
+         cluster_rows = FALSE, cluster_cols = FALSE)
+
+######################################BOXPLOT#######################################
+#Load the libraries
+library(tidyverse)
+library(ggplot2)
+#Read the dataset for Upregulated Genes
+upv <-  readxl::read_xlsx("up_genes.xlsx")
+#Plot the data for boxplot
+ggplot(upv, aes (x =  gene, y = log2(TPMs), fill = sample)) +
+  geom_boxplot(position = "dodge") +
+  scale_fill_manual(name = "Samples", values= c("lightskyblue", "lightgreen"))+
+  xlab( "Upregulated Genes") +
+  ylab("Log2(TPMs)") +
+  theme_bw() +
+  theme(text= element_text(face = "bold", size = 15), axis.text.x = element_text(angle = 90, hjust = 1))
+#Read the dataset for Downregulated Genes
+downv <- readxl::read_xlsx("down_genes.xlsx")
+ggplot(downv, aes (x =  gene, y = log2(TPMs), fill = sample)) +
+  geom_boxplot(position = "dodge") +
+  scale_fill_manual(name = "Samples", values= c("lightskyblue", "lightgreen"))+
+  xlab( "Downregulated Genes") +
+  ylab("Log2(TPMs)") +
+  theme_bw() +
+theme(text= element_text(face = "bold", size = 15), axis.text.x = element_text(angle = 90, hjust = 1))
+####################Hypoxia Inducible Factors (boxplot)####################################
+#Load the libraries
+library(tidyverse)
+library(ggplot2)
+#Read the dataset for HIFs
+hif <-  readxl::read_xlsx("hifs.xlsx")
+#Plot the data
+ggplot(hif, aes (x =  genes, y = log2(TPMs), fill = sample)) +
+  geom_boxplot(position = "dodge") +
+  scale_fill_manual(name = "Samples", values= c("lightskyblue", "lightgreen"))+
+  geom_text( data = hif, aes(x= genes, y= log2(TPMs), label= log2FC, hjust = "outward"), color = "black", size = 3.5, hjust = 1.2, vjust = -4) +
+  xlab( "Hypoxia Inducible Factors") +
+  ylab("Log2(TPMs)") +
+  theme_bw() +
+  theme(text= element_text(face = "bold", size = 17), axis.text.x = element_text(angle = 90, hjust = 1))
